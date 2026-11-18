@@ -1,5 +1,7 @@
 # logstream
 
+[![ci](https://github.com/Zolnarb1/logstream-api/actions/workflows/ci.yml/badge.svg)](https://github.com/Zolnarb1/logstream-api/actions/workflows/ci.yml) ![Python 3.12](https://img.shields.io/badge/python-3.12-blue) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **A small real-time log anomaly detection service.** Send raw log lines over HTTP and get alerts back immediately, with a live dashboard. It turns the findings of my offline study [log-anomaly-bench](https://github.com/Zolnarb1/log-anomaly-bench) into something you could actually deploy.
 
 ![Dashboard](docs/dashboard.jpg)
@@ -109,3 +111,6 @@ Without it, a restart forgets every learned template: message types the service 
 
 ## Author
 Hamza Fakhri, Computer Science engineering student, Polytech Nantes.
+
+## License
+MIT, see [LICENSE](LICENSE). The public datasets used here keep their own licenses (sources linked above).
