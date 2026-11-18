@@ -17,10 +17,12 @@ Templates are mined online with [Drain3](https://github.com/logpai/Drain3). Numb
 ## API
 | Method | Path | |
 |---|---|---|
-| `POST` | `/ingest` | `{"lines": ["raw line", ...], "timestamp": 1117838570}` → alerts raised by this batch |
-| `GET` | `/alerts?limit=50&kind=SEVERITY` | recent alerts, newest first |
-| `GET` | `/templates?top=20` | most frequent templates |
-| `GET` | `/stats` | counters for the dashboard |
+| `POST` | `/ingest` | `{"lines": ["raw line", ...], "source": "web-1", "timestamp": 1117838570}` → alerts raised by this batch (`source` optional, default `default`) |
+| `GET` | `/alerts?limit=50&kind=SEVERITY&source=web-1` | recent alerts, newest first, each tagged with its source |
+| `GET` | `/templates?top=20&source=web-1` | most frequent templates of one source |
+| `GET` | `/sources` | every source seen, with its counters |
+| `GET` | `/stats` | totals + per-source counters for the dashboard |
+| `GET` | `/metrics` | Prometheus metrics (text format) |
 | `POST` | `/snapshot` | save the detector state now (when persistence is on) |
 | `GET` | `/health` | liveness probe |
 | `GET` | `/` | live dashboard (vanilla JS, polls every second) |
@@ -53,6 +55,29 @@ Configuration via environment variables:
 | `LOGSTREAM_SPIKE_K` | 4 | σ multiplier for rate spikes |
 | `LOGSTREAM_STATE` | unset locally, `/data/state.json` in Docker | where to persist state; unset = in-memory only |
 | `LOGSTREAM_SAVE_EVERY` | 30 | max seconds between automatic saves while ingesting |
+| `LOGSTREAM_MAX_SOURCES` | 100 | cap on distinct sources; more → HTTP 429 (protects memory from a misbehaving client) |
+
+## Sources and metrics (v0.3)
+**One detector per source.** Each batch can name its `source` (`web-1`, `hdfs`, `bgl-node`…). Every source gets its own template tree, rate statistics, warm-up and alert buffer; detectors are created on first use, up to `LOGSTREAM_MAX_SOURCES`. Alerts carry their source, so a page says *which* system broke.
+
+I measured whether isolation also changes *detection* (`scripts/shared_vs_per_source.py`): 4 real Loghub logs (BGL, HDFS, Zookeeper, Hadoop; 8,000 lines interleaved as one shipper would forward them) were sent to one shared detector and to per-source detectors. **Result: no difference.** 200 templates either way, 0 templates mixing lines from two systems, 0 missed "new message type" alerts. Drain already separates systems whose lines look different. So the benefit is operational (attribution, independent warm-up, per-source limits and metrics), not better detection. Systems with similar message formats could still collide in a shared detector; that case isn't measured here.
+
+**Prometheus `/metrics`**, written by hand in the text exposition format (no client library):
+
+| Metric | Type | Labels |
+|---|---|---|
+| `logstream_lines_total` | counter | `source` |
+| `logstream_alerts_total` | counter | `source`, `kind` |
+| `logstream_templates` | gauge | `source` |
+| `logstream_warming_up` | gauge | `source` |
+| `logstream_sources` | gauge | |
+| `logstream_ingest_batches_total`, `logstream_ingest_seconds_total` | counter | |
+| `logstream_rejected_batches_total` | counter | `reason` |
+| `logstream_state_saves_total`, `logstream_last_save_timestamp_seconds` | counter / gauge | |
+
+Example alert rule: `increase(logstream_alerts_total{kind="NEW_TEMPLATE"}[10m]) > 5`, meaning several never-seen message types appeared within 10 minutes.
+
+**State files:** v0.3 writes format v2 (all sources). A v0.2 file (one detector) is loaded as the source `default` and rewritten in the new format at the next save. This is tested.
 
 ## Persistence
 Without it, a restart forgets every learned template: message types the service already knew get reported as "new" again, and rate statistics start from zero.
@@ -68,7 +93,7 @@ Without it, a restart forgets every learned template: message types the service 
 - **Caveat:** the template tree is encoded with jsonpickle (Drain3's own snapshot format), which can instantiate Python objects, so only load state files this service wrote.
 
 ## Engineering notes
-- **Throughput:** the detector handles ~150k lines/s on one laptop thread (`scripts/bench.py`, 200k BGL lines, detection logic only, without HTTP).
+- **Throughput:** the detector handles 100k+ lines/s on one laptop thread (`scripts/bench.py`, 200k BGL lines, detection logic only, without HTTP; 110–150k depending on machine load).
 - **Deterministic and testable:** time is passed into the detector instead of read from the clock. Rate statistics use Welford's online mean/variance (O(1) memory per template).
 - **Thread safety:** Drain3 isn't thread-safe, so a lock wraps detector access in the API.
 - **Bounded memory:** the alert buffer is capped (500), as is the per-minute dedup set.
@@ -79,7 +104,7 @@ Without it, a restart forgets every learned template: message types the service 
 
 ## Limitations / next steps
 - ~~State is in memory: a restart forgets learned templates.~~ Done in v0.2 (see Persistence). A file per instance is fine for one node; several replicas would need shared storage such as Redis.
-- Single process: scaling out would need a message queue (e.g. Kafka) and per-source detectors.
+- Single process: scaling out would need a message queue (e.g. Kafka) in front, sharded by source (the per-source detectors make that split natural).
 - No ground-truth evaluation in this repo. The offline evaluation lives in log-anomaly-bench.
 
 ## Author

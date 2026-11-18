@@ -13,7 +13,8 @@ USER appuser
 VOLUME /data
 
 ENV LOGSTREAM_WARMUP=500 LOGSTREAM_SPIKE_K=4 \
-    LOGSTREAM_STATE=/data/state.json LOGSTREAM_SAVE_EVERY=30
+    LOGSTREAM_STATE=/data/state.json LOGSTREAM_SAVE_EVERY=30 \
+    LOGSTREAM_MAX_SOURCES=100
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
 CMD ["uvicorn", "logstream.api:app", "--host", "0.0.0.0", "--port", "8000"]

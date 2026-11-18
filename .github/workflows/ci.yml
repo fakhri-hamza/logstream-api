@@ -30,6 +30,7 @@ jobs:
           for i in $(seq 1 20); do curl -sf localhost:8000/health && break; sleep 1; done
           curl -sf -X POST localhost:8000/ingest -H 'Content-Type: application/json' \
                -d '{"lines": ["KERNEL FATAL data TLB error interrupt"], "timestamp": 0}' | grep SEVERITY
+          curl -sf localhost:8000/metrics | grep 'logstream_lines_total{source="default"} 1'
       - name: Restart keeps state
         run: |
           docker stop ls && docker rm ls                 # graceful stop -> state saved on shutdown
