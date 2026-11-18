@@ -35,6 +35,15 @@ def test_alert_filters_by_source_and_templates_404():
     assert c.get("/templates?source=nope").status_code == 404
 
 
+def test_tiny_durations_are_exported_as_valid_numbers():
+    # on a fast machine the ingest time is printed in scientific notation, e.g. 1.2e-05
+    pool = DetectorPool()
+    pool.ingest_seconds = 0.0000123
+    line = [x for x in pool.prometheus().splitlines() if x.startswith("logstream_ingest_seconds_total")][0]
+    assert line == "logstream_ingest_seconds_total 1.2e-05"
+    assert float(line.split()[1]) == 1.2e-05
+
+
 def test_bad_source_name_and_source_limit():
     c = client(max_sources=2)
     assert c.post("/ingest", json={"lines": ["x"], "source": "bad name!"}).status_code == 422
@@ -49,7 +58,7 @@ def test_metrics_are_valid_prometheus_text():
     c.post("/ingest", json={"lines": ["kernel FATAL panic"] * 3, "source": "node-1", "timestamp": 0})
     r = c.get("/metrics")
     assert r.headers["content-type"].startswith("text/plain")
-    sample = re.compile(r'^[a-zA-Z_:][a-zA-Z0-9_:]*(\{[a-zA-Z_][a-zA-Z0-9_]*="[^"]*"(,[a-zA-Z_][a-zA-Z0-9_]*="[^"]*")*\})? -?[0-9.e+]+$')
+    sample = re.compile(r'^[a-zA-Z_:][a-zA-Z0-9_:]*(\{[a-zA-Z_][a-zA-Z0-9_]*="[^"]*"(,[a-zA-Z_][a-zA-Z0-9_]*="[^"]*")*\})? -?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$')
     for line in r.text.strip().splitlines():
         assert line.startswith("# HELP ") or line.startswith("# TYPE ") or sample.match(line), line
     assert 'logstream_lines_total{source="node-1"} 3' in r.text
