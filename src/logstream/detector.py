@@ -37,6 +37,7 @@ class Alert:
     template: str
     line: str
     detail: str = ""
+    source: str = "default"
 
     def to_dict(self) -> dict:
         return asdict(self)
