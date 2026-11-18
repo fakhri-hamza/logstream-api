@@ -41,13 +41,14 @@ def main():
     p.add_argument("--url", default="http://127.0.0.1:8000")
     p.add_argument("--batch", type=int, default=50)
     p.add_argument("--speed", type=float, default=10, help="batches per second")
+    p.add_argument("--source", default="bgl", help="source name sent with every batch")
     a = p.parse_args()
     if not a.file.exists():
         a.file.parent.mkdir(parents=True, exist_ok=True)
         urllib.request.urlretrieve(SAMPLE, a.file)
     sent = alerts = 0
     for lines, ts in batches(a.file, a.batch):
-        body = json.dumps({"lines": lines, "timestamp": ts}).encode()
+        body = json.dumps({"lines": lines, "timestamp": ts, "source": a.source}).encode()
         req = urllib.request.Request(f"{a.url}/ingest", data=body,
                                      headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req) as r:

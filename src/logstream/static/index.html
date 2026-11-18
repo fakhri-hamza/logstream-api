@@ -38,8 +38,8 @@
   <div class="card kpi"><div class="l">lines / second</div><div class="v" id="rate">0</div></div>
   <div class="card wide"><div class="l" style="color:var(--muted);font-size:12px">THROUGHPUT (last 2 min)</div><canvas id="spark" width="600" height="140"></canvas></div>
   <div class="card wide"><div class="l" style="color:var(--muted);font-size:12px">ALERTS BY TYPE</div><canvas id="bars" width="600" height="140"></canvas></div>
-  <div class="card full"><table><thead><tr><th>type</th><th>time</th><th>template</th><th>detail</th></tr></thead><tbody id="alertRows"></tbody></table></div>
-  <div class="card full"><table><thead><tr><th>#</th><th>count</th><th>top templates</th></tr></thead><tbody id="tplRows"></tbody></table></div>
+  <div class="card full"><table><thead><tr><th>type</th><th>source</th><th>time</th><th>template</th><th>detail</th></tr></thead><tbody id="alertRows"></tbody></table></div>
+  <div class="card full"><table><thead><tr><th>#</th><th>count</th><th id="tplHead">top templates</th></tr></thead><tbody id="tplRows"></tbody></table></div>
 </main>
 <script>
 const hist = []; let lastLines = null, lastT = null;
@@ -64,7 +64,12 @@ function bars(cv, counts) {
 }
 async function tick() {
   try {
-    const [s, a, t] = await Promise.all(['stats','alerts?limit=15','templates?top=8'].map(p => fetch(p).then(r => r.json())));
+    const [s, a] = await Promise.all(['stats','alerts?limit=15'].map(p => fetch(p).then(r => r.json())));
+    // top templates of the busiest source (each source has its own detector)
+    const busiest = Object.entries(s.sources || {}).sort((x,y) => y[1].lines_seen - x[1].lines_seen)[0];
+    const t = busiest ? await fetch(`templates?top=8&source=${encodeURIComponent(busiest[0])}`).then(r => r.json()) : [];
+    const nSources = Object.keys(s.sources || {}).length;
+    document.getElementById('tplHead').textContent = busiest ? `top templates: ${busiest[0]}` + (nSources > 1 ? ` (busiest of ${nSources} sources)` : '') : 'top templates';
     const now = performance.now() / 1000;
     if (lastLines !== null) { hist.push(Math.max(0, (s.lines_seen - lastLines) / (now - lastT))); if (hist.length > 120) hist.shift(); }
     lastLines = s.lines_seen; lastT = now;
@@ -75,7 +80,7 @@ async function tick() {
     document.getElementById('status').textContent = s.warming_up ? 'warming up (learning normal templates)…' : 'live';
     spark(document.getElementById('spark'), hist); bars(document.getElementById('bars'), s.alerts_by_kind);
     document.getElementById('alertRows').innerHTML = a.map(x =>
-      `<tr><td><span class="tag ${x.kind}">${x.kind}</span></td><td>${new Date(x.time*1000).toISOString().slice(0,19).replace('T',' ')}</td><td><code>${esc(x.template)}</code></td><td>${esc(x.detail)}</td></tr>`).join('');
+      `<tr><td><span class="tag ${x.kind}">${x.kind}</span></td><td>${esc(x.source || '')}</td><td>${new Date(x.time*1000).toISOString().slice(0,19).replace('T',' ')}</td><td><code>${esc(x.template)}</code></td><td>${esc(x.detail)}</td></tr>`).join('');
     document.getElementById('tplRows').innerHTML = t.map((x,i) =>
       `<tr><td>${i+1}</td><td>${fmt(x.count)}</td><td><code>${esc(x.template)}</code></td></tr>`).join('');
   } catch (e) { document.getElementById('status').textContent = 'disconnected'; }
