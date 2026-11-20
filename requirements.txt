@@ -4,3 +4,6 @@ drain3==0.9.11
 jsonpickle==1.5.1
 httpx==0.28.1
 pytest==8.3.3
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp-proto-http==1.45.2

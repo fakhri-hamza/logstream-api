@@ -27,6 +27,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+from logstream import otel
 from logstream.detector import StreamDetector
 from logstream.pool import DEFAULT_SOURCE, DetectorPool, TooManySources
 
@@ -64,7 +65,9 @@ def _load_or_fresh(state_path: Path | None) -> tuple[DetectorPool, bool]:
 
 def create_app(detector: StreamDetector | DetectorPool | None = None,
                state_path: str | Path | None = None,
-               save_every: float | None = None) -> FastAPI:
+               save_every: float | None = None,
+               telemetry=None) -> FastAPI:
+    tel = telemetry if telemetry is not None else otel.from_env()
     if state_path is None and os.getenv("LOGSTREAM_STATE"):
         state_path = os.environ["LOGSTREAM_STATE"]
     state_path = Path(state_path) if state_path else None
@@ -96,24 +99,27 @@ def create_app(detector: StreamDetector | DetectorPool | None = None,
         with lock:
             if save():
                 log.info("state saved to %s on shutdown", state_path)
+        tel.shutdown()
 
-    app = FastAPI(title="logstream", version="0.3.0", lifespan=lifespan,
+    app = FastAPI(title="logstream", version="0.4.0", lifespan=lifespan,
                   description="Real-time log anomaly detection (Drain + severity, new-template "
                               "and rate-spike alerts), one detector per source, Prometheus metrics, "
-                              "optional state persistence")
+                              "optional OpenTelemetry export, optional state persistence")
 
     @app.post("/ingest")
     def ingest(batch: Batch):
         now = batch.timestamp if batch.timestamp is not None else time.time()
-        with lock:
+        with tel.ingest_span(batch.source, len(batch.lines)), lock:
             t0 = time.perf_counter()
             try:
                 alerts = [a.to_dict() for a in pool.process(batch.source, batch.lines, now)]
             except TooManySources as exc:
                 pool.rejected["too_many_sources"] += 1
                 raise HTTPException(429, str(exc)) from exc
+            elapsed = time.perf_counter() - t0
             pool.batches += 1
-            pool.ingest_seconds += time.perf_counter() - t0
+            pool.ingest_seconds += elapsed
+            tel.record(batch.source, len(batch.lines), alerts, elapsed)
             if state_path is not None and time.monotonic() - last_save[0] >= save_every:
                 save()
         return {"accepted": len(batch.lines), "source": batch.source, "alerts": alerts}
