@@ -40,3 +40,38 @@ jobs:
           grep -q '"lines_seen":1' stats.json
           grep -q '"restored_from_state":true' stats.json
           docker rm -f ls2
+
+  otel:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt -e .
+      - name: Start an OpenTelemetry Collector
+        run: |
+          mkdir -p out && chmod 777 out
+          docker run -d --name otelcol -p 4318:4318 \
+            -v "$PWD/deploy/otel-collector.yaml:/etc/otelcol/config.yaml" -v "$PWD/out:/out" \
+            otel/opentelemetry-collector-contrib:0.114.0 --config /etc/otelcol/config.yaml
+          sleep 5
+      - name: Send logs through logstream with OTel on
+        env:
+          OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318
+          OTEL_METRIC_EXPORT_INTERVAL: "1000"
+        run: |
+          uvicorn logstream.api:app --port 8000 &
+          for i in $(seq 1 20); do curl -sf localhost:8000/health && break; sleep 1; done
+          curl -sf -X POST localhost:8000/ingest -H 'Content-Type: application/json' \
+               -d '{"lines": ["KERNEL FATAL data TLB error interrupt"], "source": "ci", "timestamp": 0}'
+          sleep 8
+          kill %1; sleep 3
+      - name: Spans and metrics reached the collector
+        run: |
+          docker logs otelcol | tail -5
+          grep -q 'logstream.ingest' out/otel.json
+          grep -q 'logstream.alerts' out/otel.json
+          echo "OK: span and metric exported over OTLP"

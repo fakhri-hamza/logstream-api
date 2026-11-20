@@ -94,13 +94,40 @@ Without it, a restart forgets every learned template: message types the service 
 - **Tested:** round-trip equality, no false `NEW_TEMPLATE` after restart, rate spikes still detected after restart, save on shutdown, corrupt-file handling. CI also restarts the real container on a volume and checks the state came back.
 - **Caveat:** the template tree is encoded with jsonpickle (Drain3's own snapshot format), which can instantiate Python objects, so only load state files this service wrote.
 
+## OpenTelemetry export (v0.4)
+The service can push its own telemetry over **OTLP/HTTP** to any OpenTelemetry backend: an OTel Collector, Jaeger, Grafana, or **Dynatrace**. It is off by default and is switched on with the standard OTel environment variables:
+
+```bash
+# any OTLP receiver (e.g. an OpenTelemetry Collector)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 uvicorn logstream.api:app
+
+# straight to Dynatrace (API token with the openTelemetryTrace.ingest + metrics.ingest scopes)
+OTEL_EXPORTER_OTLP_ENDPOINT=https://<env-id>.live.dynatrace.com/api/v2/otlp \
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Api-Token%20<token>" \
+OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta \
+uvicorn logstream.api:app
+```
+
+| Signal | Name | Attributes |
+|---|---|---|
+| Trace | one span `logstream.ingest` per batch, with one `logstream.alert` span event per alert | `logstream.source`, `logstream.lines`, `logstream.alerts`; event: `kind`, `template`, `detail` |
+| Metric (counter) | `logstream.lines.ingested` | `source` |
+| Metric (counter) | `logstream.alerts` | `source`, `kind` |
+| Metric (histogram, s) | `logstream.ingest.duration` | `source` |
+
+So an alert raised by logstream shows up **inside the trace of the request that caused it**, and the alert rate can be charted and alerted on in whichever backend you use. Prometheus scraping (`/metrics`) still works alongside.
+
+- **Measured** (`scripts/otel_overhead.py`): 20k BGL lines in 500-line batches through the HTTP API, median of 3 runs. 25,800 lines/s with OTel off vs 24,900 with OTel on (**about 4% slower**). A local fake OTLP receiver got the trace and metric exports (466 KiB).
+- **Tested** (`tests/test_otel.py`, in-memory exporters): a span per batch with the alert events, per-source line and alert counters, the duration histogram, and off-by-default behaviour.
+- **CI** runs a real OpenTelemetry Collector container, points the service at it and checks that the `logstream.ingest` span and the `logstream.alerts` metric arrive.
+
 ## Engineering notes
 - **Throughput:** the detector handles 100k+ lines/s on one laptop thread (`scripts/bench.py`, 200k BGL lines, detection logic only, without HTTP; 110–150k depending on machine load).
 - **Deterministic and testable:** time is passed into the detector instead of read from the clock. Rate statistics use Welford's online mean/variance (O(1) memory per template).
 - **Thread safety:** Drain3 isn't thread-safe, so a lock wraps detector access in the API.
 - **Bounded memory:** the alert buffer is capped (500), as is the per-minute dedup set.
 - **Input validation:** Pydantic models reject malformed payloads with 422 and cap batch size (10,000 lines).
-- **Tests** (`tests/`, 13): each alert type, warm-up, per-minute dedup, rate-spike dedup, endpoint filters, bad payloads, persistence.
+- **Tests** (`tests/`, 22): each alert type, warm-up, per-minute dedup, rate-spike dedup, endpoint filters, bad payloads, persistence, per-source metrics, OpenTelemetry export.
 - **CI** (`.github/workflows/ci.yml`): runs the tests, builds the Docker image, starts it, smoke-tests `/health` and `/ingest`, then restarts the container on the same volume and checks the state was restored.
 - **Container:** non-root user, healthcheck, slim base image.
 

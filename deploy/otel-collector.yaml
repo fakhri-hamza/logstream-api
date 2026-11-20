@@ -1,0 +1,16 @@
+# Minimal OpenTelemetry Collector config: receive OTLP over HTTP, write everything to a file.
+# Used by CI to prove that logstream's spans and metrics really arrive at a collector.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  file:
+    path: /out/otel.json
+processors:
+  batch: {}
+service:
+  pipelines:
+    traces:  {receivers: [otlp], processors: [batch], exporters: [file]}
+    metrics: {receivers: [otlp], processors: [batch], exporters: [file]}
