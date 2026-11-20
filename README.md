@@ -1,8 +1,8 @@
 # logstream
 
-[![ci](https://github.com/Zolnarb1/logstream-api/actions/workflows/ci.yml/badge.svg)](https://github.com/Zolnarb1/logstream-api/actions/workflows/ci.yml) ![Python 3.12](https://img.shields.io/badge/python-3.12-blue) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![ci](https://github.com/fakhri-hamza/logstream-api/actions/workflows/ci.yml/badge.svg)](https://github.com/fakhri-hamza/logstream-api/actions/workflows/ci.yml) ![Python 3.12](https://img.shields.io/badge/python-3.12-blue) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**A small real-time log anomaly detection service.** Send raw log lines over HTTP and get alerts back immediately, with a live dashboard. It turns the findings of my offline study [log-anomaly-bench](https://github.com/Zolnarb1/log-anomaly-bench) into something you could actually deploy.
+**A small real-time log anomaly detection service.** Send raw log lines over HTTP and get alerts back immediately, with a live dashboard. It turns the findings of my offline study [log-anomaly-bench](https://github.com/fakhri-hamza/log-anomaly-bench) into something you could actually deploy.
 
 ![Dashboard](docs/dashboard.jpg)
 *Replaying the BlueGene/L supercomputer log into the service. Alerts arrive as lines stream in.*
